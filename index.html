@@ -136,7 +136,7 @@
   </div>
 
   <div class="footer">
-    <span>Refreshes every 30 seconds</span>
+    <span>Coinbase Advanced • real-time WebSocket</span>
     <span id="clock"></span>
   </div>
 </div>
@@ -168,34 +168,89 @@ function setChange(el, v) {
   el.className = 'change ' + (v >= 0 ? 'good' : 'bad');
 }
 
-async function updatePrices() {
-  const status = document.getElementById('status');
-  try {
-    status.textContent = 'Updating…';
-    const url = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,sui&vs_currencies=usd&include_24hr_change=true';
-    const r = await fetch(url, {cache:'no-store'});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
+let ws = null;
+let reconnectTimer = null;
+const lastPrices = {};
 
-    for (const c of COINS) {
-      const row = d[c.id];
-      document.getElementById(c.key + '-price').textContent = fmtPrice(row.usd, c.key);
-      setChange(document.getElementById(c.key + '-change'), row.usd_24h_change);
-    }
-    status.textContent = 'Live • ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
-  } catch (e) {
-    status.textContent = 'Price feed unavailable • retrying';
-  }
+function applyPrice(product, price) {
+  const map = {'BTC-USD':'btc', 'ETH-USD':'eth', 'SUI-USD':'sui'};
+  const key = map[product];
+  if (!key || !Number.isFinite(price)) return;
+  lastPrices[product] = price;
+  document.getElementById(key + '-price').textContent = fmtPrice(price, key);
 }
 
+function connectCoinbase() {
+  const status = document.getElementById('status');
+  if (ws) { try { ws.close(); } catch(e) {} }
+
+  status.textContent = 'Connecting to Coinbase…';
+  ws = new WebSocket('wss://advanced-trade-ws.coinbase.com');
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type: 'subscribe',
+      product_ids: ['BTC-USD','ETH-USD','SUI-USD'],
+      channel: 'ticker'
+    }));
+    // Heartbeats help keep quiet subscriptions/connections alive.
+    ws.send(JSON.stringify({
+      type: 'subscribe',
+      product_ids: ['BTC-USD','ETH-USD','SUI-USD'],
+      channel: 'heartbeats'
+    }));
+    status.textContent = 'Coinbase LIVE';
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.channel === 'ticker' && Array.isArray(msg.events)) {
+        for (const ev of msg.events) {
+          if (!Array.isArray(ev.tickers)) continue;
+          for (const t of ev.tickers) {
+            const price = Number(t.price);
+            applyPrice(t.product_id, price);
+
+            // Coinbase ticker messages may include 24h price-percent change.
+            const key = {'BTC-USD':'btc','ETH-USD':'eth','SUI-USD':'sui'}[t.product_id];
+            if (key) {
+              let ch = Number(t.price_percent_chg_24_h);
+              if (!Number.isFinite(ch) && Number.isFinite(Number(t.open_24_h)) && Number(t.open_24_h) !== 0) {
+                ch = ((price - Number(t.open_24_h)) / Number(t.open_24_h)) * 100;
+              }
+              if (Number.isFinite(ch)) setChange(document.getElementById(key + '-change'), ch);
+            }
+          }
+        }
+        status.textContent = 'Coinbase LIVE • ' +
+          new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit', second:'2-digit'});
+      }
+    } catch(e) {}
+  };
+
+  ws.onerror = () => {
+    status.textContent = 'Coinbase connection error';
+  };
+
+  ws.onclose = () => {
+    status.textContent = 'Reconnecting to Coinbase…';
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectCoinbase, 2500);
+  };
+}
+
+// Kept for compatibility with the start button below.
+function updatePrices() {
+  if (!ws || ws.readyState === WebSocket.CLOSED) connectCoinbase();
+}
 function tickClock() {
   document.getElementById('clock').textContent =
     new Date().toLocaleString([], {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
 }
 setInterval(tickClock, 1000);
 tickClock();
-setInterval(updatePrices, 30000);
-updatePrices();
+connectCoinbase();
 
 // Generate a near-silent WAV in memory so no external MP3 file is required.
 function makeQuietWavUrl() {
