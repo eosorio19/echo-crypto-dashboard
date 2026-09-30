@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Crypto Dashboard</title>
+<style>
+  :root {
+    --bg:#071018;
+    --card:#0d1722;
+    --text:#f5f7fa;
+    --muted:#8ea0b2;
+    --good:#26d980;
+    --bad:#ff5c70;
+    --line:#243443;
+  }
+  * { box-sizing:border-box; }
+  html, body {
+    margin:0; width:100%; height:100%; overflow:hidden;
+    background:var(--bg); color:var(--text);
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .wrap {
+    width:100vw; height:100vh; padding:18px 24px 14px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .top {
+    display:flex; align-items:center; justify-content:space-between;
+    min-height:42px;
+  }
+  h1 {
+    margin:0; font-size:28px; letter-spacing:.5px;
+  }
+  .status {
+    color:var(--muted); font-size:16px; text-align:right;
+  }
+  .grid {
+    display:grid; grid-template-columns:1fr; gap:12px; flex:1;
+  }
+  .card {
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:18px;
+    display:grid;
+    grid-template-columns:120px 1fr 165px;
+    align-items:center;
+    padding:12px 20px;
+    min-height:0;
+  }
+  .coin { display:flex; align-items:center; gap:14px; }
+  .symbol {
+    width:54px; height:54px; border-radius:50%;
+    display:grid; place-items:center;
+    font-size:28px; font-weight:800; background:#152434;
+  }
+  .name strong { display:block; font-size:27px; }
+  .name span { color:var(--muted); font-size:15px; }
+  .price {
+    font-size:42px; font-weight:800; text-align:center; letter-spacing:.2px;
+  }
+  .change {
+    font-size:28px; font-weight:800; text-align:right;
+  }
+  .good { color:var(--good); }
+  .bad { color:var(--bad); }
+  .footer {
+    display:flex; justify-content:space-between; align-items:center;
+    min-height:32px; color:var(--muted); font-size:14px;
+  }
+  button {
+    background:#173047; color:#fff; border:1px solid #2c5575;
+    border-radius:12px; padding:8px 14px; font-size:14px;
+  }
+  #overlay {
+    position:fixed; inset:0; background:rgba(7,16,24,.96);
+    display:flex; flex-direction:column; justify-content:center; align-items:center;
+    gap:18px; z-index:20; text-align:center; padding:35px;
+  }
+  #overlay h2 { font-size:34px; margin:0; }
+  #overlay p { font-size:18px; color:var(--muted); max-width:700px; margin:0; }
+  #start {
+    font-size:26px; padding:16px 28px; border-radius:16px;
+  }
+  @media (max-width:900px) {
+    .wrap { padding:14px 18px 10px; gap:9px; }
+    h1 { font-size:24px; }
+    .card { grid-template-columns:105px 1fr 145px; padding:8px 14px; border-radius:14px; }
+    .symbol { width:44px; height:44px; font-size:23px; }
+    .name strong { font-size:23px; }
+    .name span { font-size:13px; }
+    .price { font-size:34px; }
+    .change { font-size:24px; }
+  }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h2>Crypto Dashboard</h2>
+  <p>Tap once to start the dashboard. This also starts a nearly silent audio loop so Amazon Silk is less likely to return to the Echo home screen.</p>
+  <button id="start">START DASHBOARD</button>
+</div>
+
+<div class="wrap">
+  <div class="top">
+    <h1>BTC • ETH • SUI</h1>
+    <div class="status" id="status">Connecting…</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="coin">
+        <div class="symbol">₿</div>
+        <div class="name"><strong>BTC</strong><span>Bitcoin</span></div>
+      </div>
+      <div class="price" id="btc-price">—</div>
+      <div class="change" id="btc-change">—</div>
+    </div>
+
+    <div class="card">
+      <div class="coin">
+        <div class="symbol">Ξ</div>
+        <div class="name"><strong>ETH</strong><span>Ethereum</span></div>
+      </div>
+      <div class="price" id="eth-price">—</div>
+      <div class="change" id="eth-change">—</div>
+    </div>
+
+    <div class="card">
+      <div class="coin">
+        <div class="symbol">S</div>
+        <div class="name"><strong>SUI</strong><span>Sui</span></div>
+      </div>
+      <div class="price" id="sui-price">—</div>
+      <div class="change" id="sui-change">—</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Refreshes every 30 seconds</span>
+    <span id="clock"></span>
+  </div>
+</div>
+
+<script>
+const COINS = [
+  {key:'btc', id:'bitcoin'},
+  {key:'eth', id:'ethereum'},
+  {key:'sui', id:'sui'}
+];
+
+function fmtPrice(v, key) {
+  if (v == null || Number.isNaN(v)) return '—';
+  const opts = key === 'btc'
+    ? {style:'currency', currency:'USD', maximumFractionDigits:0}
+    : key === 'eth'
+      ? {style:'currency', currency:'USD', maximumFractionDigits:2}
+      : {style:'currency', currency:'USD', minimumFractionDigits:2, maximumFractionDigits:4};
+  return new Intl.NumberFormat('en-US', opts).format(v);
+}
+
+function fmtChange(v) {
+  if (v == null || Number.isNaN(v)) return '—';
+  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+}
+
+function setChange(el, v) {
+  el.textContent = fmtChange(v);
+  el.className = 'change ' + (v >= 0 ? 'good' : 'bad');
+}
+
+async function updatePrices() {
+  const status = document.getElementById('status');
+  try {
+    status.textContent = 'Updating…';
+    const url = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,sui&vs_currencies=usd&include_24hr_change=true';
+    const r = await fetch(url, {cache:'no-store'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+
+    for (const c of COINS) {
+      const row = d[c.id];
+      document.getElementById(c.key + '-price').textContent = fmtPrice(row.usd, c.key);
+      setChange(document.getElementById(c.key + '-change'), row.usd_24h_change);
+    }
+    status.textContent = 'Live • ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  } catch (e) {
+    status.textContent = 'Price feed unavailable • retrying';
+  }
+}
+
+function tickClock() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleString([], {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
+setInterval(tickClock, 1000);
+tickClock();
+setInterval(updatePrices, 30000);
+updatePrices();
+
+// Generate a near-silent WAV in memory so no external MP3 file is required.
+function makeQuietWavUrl() {
+  const sampleRate = 8000, seconds = 8, n = sampleRate * seconds;
+  const buffer = new ArrayBuffer(44 + n * 2);
+  const view = new DataView(buffer);
+  function s(off, str){ for (let i=0;i<str.length;i++) view.setUint8(off+i,str.charCodeAt(i)); }
+  s(0,'RIFF'); view.setUint32(4,36+n*2,true); s(8,'WAVE'); s(12,'fmt ');
+  view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
+  view.setUint32(24,sampleRate,true); view.setUint32(28,sampleRate*2,true);
+  view.setUint16(32,2,true); view.setUint16(34,16,true); s(36,'data');
+  view.setUint32(40,n*2,true);
+  for (let i=0;i<n;i++) {
+    const sample = Math.round(Math.sin(2*Math.PI*18*i/sampleRate) * 1);
+    view.setInt16(44+i*2, sample, true);
+  }
+  return URL.createObjectURL(new Blob([buffer], {type:'audio/wav'}));
+}
+
+document.getElementById('start').addEventListener('click', async () => {
+  const audio = new Audio(makeQuietWavUrl());
+  audio.loop = true;
+  audio.volume = 0.01;
+  try { await audio.play(); } catch(e) {}
+  document.getElementById('overlay').style.display = 'none';
+  try {
+    if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+  } catch(e) {}
+  updatePrices();
+});
+</script>
+</body>
+</html>
